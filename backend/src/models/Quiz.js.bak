@@ -1,0 +1,124 @@
+import pool from '../config/database.js';
+
+class Quiz {
+  static async create({ lesson_id, title, description, passing_score, time_limit }) {
+    const result = await pool.query(
+      `INSERT INTO quizzes (lesson_id, title, description, passing_score, time_limit)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING *`,
+      [lesson_id, title, description, passing_score, time_limit]
+    );
+    return result.rows[0];
+  }
+
+  static async findById(id) {
+    const result = await pool.query(
+      `SELECT q.*,
+              (SELECT json_agg(
+                json_build_object(
+                  'id', qq.id,
+                  'question', qq.question,
+                  'options', qq.options,
+                  'points', qq.points,
+                  'order_index', qq.order_index
+                ) ORDER BY qq.order_index
+              ) FROM quiz_questions qq WHERE qq.quiz_id = q.id) as questions
+       FROM quizzes q
+       WHERE q.id = $1`,
+      [id]
+    );
+    return result.rows[0];
+  }
+
+  static async findByLessonId(lesson_id) {
+    const result = await pool.query('SELECT * FROM quizzes WHERE lesson_id = $1', [lesson_id]);
+    return result.rows[0];
+  }
+
+  static async addQuestion({ quiz_id, question, option_a, option_b, option_c, option_d, correct_answer, points, order_index }) {
+    const result = await pool.query(
+      `INSERT INTO quiz_questions (quiz_id, question, option_a, option_b, option_c, option_d, correct_answer, points, order_index)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       RETURNING *`,
+      [quiz_id, question, option_a, option_b, option_c, option_d, correct_answer, points, order_index]
+    );
+    return result.rows[0];
+  }
+
+  static async startAttempt(quiz_id, enrollment_id) {
+    const result = await pool.query(
+      `INSERT INTO quiz_attempts (quiz_id, enrollment_id)
+       VALUES ($1, $2)
+       RETURNING *`,
+      [quiz_id, enrollment_id]
+    );
+    return result.rows[0];
+  }
+
+  static async submitAttempt(attempt_id, answers) {
+    // Get quiz with questions
+    const quizResult = await pool.query(
+      `SELECT q.*, 
+              (SELECT json_agg(qq.*) FROM quiz_questions qq WHERE qq.quiz_id = q.id ORDER BY qq.order_index) as questions
+       FROM quizzes q
+       JOIN quiz_attempts qa ON q.id = qa.quiz_id
+       WHERE qa.id = $1`,
+      [attempt_id]
+    );
+
+    const quiz = quizResult.rows[0];
+    if (!quiz) throw new Error('Quiz attempt not found');
+
+    // Calculate score
+    let score = 0;
+    let total_points = 0;
+    const questions = quiz.questions || [];
+
+    questions.forEach((q) => {
+      total_points += q.points;
+      if (answers[q.id] === q.correct_answer) {
+        score += q.points;
+      }
+    });
+
+    const percentage = total_points > 0 ? (score / total_points * 100).toFixed(2) : 0;
+    const passed = percentage >= quiz.passing_score;
+
+    // Update attempt
+    const result = await pool.query(
+      `UPDATE quiz_attempts
+       SET score = $1, total_points = $2, percentage = $3, passed = $4, completed_at = CURRENT_TIMESTAMP
+       WHERE id = $5
+       RETURNING *`,
+      [score, total_points, percentage, passed, attempt_id]
+    );
+
+    return result.rows[0];
+  }
+
+  static asynce.student_id, u.full_name as student_name
+       FROM quiz_attempts qa
+       JOIN quizzes q ON qa.quiz_id = q.id
+       JOIN enrollments e ON qa.enrollment_id = e.id
+       JOIN users u ON e.student_id = u.id
+       WHERE qa.id = $1`,
+      [attempt_id]
+    );
+    return result.rows[0];
+  }
+
+  static async getStudentAttempts(quiz_id, enrollment_id) {
+    const result = await pool.query(
+      `SELECT * FROM quiz_attempts
+       WHERE quiz_id = $1 AND enrollment_id = $2
+       ORDER BY started_at DESC`,
+      [quiz_id, enrollm quiz_attempts
+       WHERE quiz_id = $1 AND student_id = $2
+       ORDER BY started_at DESC`,
+      [quiz_id, student_id]
+    );
+    return result.rows;
+  }
+}
+
+export default Quiz;

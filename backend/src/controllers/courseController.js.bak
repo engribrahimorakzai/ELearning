@@ -1,0 +1,141 @@
+import Course from '../models/Course.js';
+import Enrollment from '../models/Enrollment.js';
+import { asyncHandler } from '../middleware/errorHandler.js';
+
+export const browseCourses = asyncHandler(async (req, res) => {
+  const filters = {
+    search: req.query.search,
+    category_id: req.query.category_id,
+    min_price: req.query.min_price,
+    max_price: req.query.max_price,
+    min_rating: req.query.min_rating,
+    is_featured: req.query.is_featured === 'true',
+    sort: req.query.sort,
+    limit: parseInt(req.query.limit) || 20,
+    offset: parseInt(req.query.offset) || 0
+  };
+
+  const courses = await Course.findAll(filters);
+
+  res.json({
+    courses,
+    pagination: {
+      limit: filters.limit,
+      offset: filters.offset,
+      count: courses.length
+    }
+  });
+});
+
+export const getCourseDetails = asyncHandler(async (req, res) => {
+  const course = await Course.findById(req.params.id);
+
+  if (!course) {
+    return res.status(404).json({ error: 'Course not found' });
+  }
+
+  res.json({ course });
+});
+
+export const createCourse = asyncHandler(async (req, res) => {
+  const { title, description, category_id, price, thumbnail_url, status } = req.body;
+
+  const course = await Course.create({
+    instructor_id: req.user.id,
+    title,
+    description,
+    category_id,
+    price,
+    thumbnail_url,
+    status
+  });
+
+  res.status(201).json({
+    message: 'Course created successfully',
+    course
+  });
+});
+
+export const updateCourse = asyncHandler(async (req, res) => {
+  const course = await Course.findById(req.params.id);
+
+  if (!course) {
+    return res.status(404).json({ error: 'Course not found' });
+  }
+
+  if (course.instructor_id !== req.user.id && req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Not authorized to update this course' });
+  }
+
+  const updatedCourse = await Course.update(req.params.id, req.body);
+
+  res.json({
+    message: 'Course updated successfully',
+    course: updatedCourse
+  });
+});
+
+export const deleteCourse = asyncHandler(async (req, res) => {
+  const course = await Course.findById(req.params.id);
+
+  if (!course) {
+    return res.status(404).json({ error: 'Course not found' });
+  }
+
+  if (course.instructor_id !== req.user.id && req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Not authorized to delete this course' });
+  }
+
+  await Course.delete(req.params.id);
+
+  res.json({ message: 'Course deleted successfully' });
+});
+
+export const enrollCourse = asyncHandler(async (req, res) => {
+  const course = await Course.findById(req.params.id);
+
+  if (!course) {
+    return res.status(404).json({ error: 'Course not found' });
+  }
+
+  if (course.status !== 'published') {
+    return res.status(400).json({ error: 'Course is not available for enrollment' });
+  }
+
+  const existingEnrollment = await Enrollment.findByStudentAndCourse(req.user.id, req.params.id);
+
+  if (existingEnrollment) {
+    return res.status(409).json({ error: 'Already enrolled in this course' });
+  }
+
+  const enrollment = await Enrollment.create(req.user.id, req.params.id);
+
+  res.status(201).json({
+    message: 'Enrolled successfully',
+    enrollment
+  });
+});
+
+export const getCourseCurriculum = asyncHandler(async (req, res) => {
+  const course = await Course.findById(req.params.id);
+
+  if (!course) {
+    return res.status(404).json({ error: 'Course not found' });
+  }
+
+  const curriculum = await Course.getCurriculum(req.params.id);
+
+  res.json({ curriculum });
+});
+
+export const getMyCourses = asyncHandler(async (req, res) => {
+  const courses = await Enrollment.getStudentCourses(req.user.id);
+
+  res.json({ courses });
+});
+
+export const getMyTeaching = asyncHandler(async (req, res) => {
+  const courses = await Course.getInstructorCourses(req.user.id);
+
+  res.json({ courses });
+});
